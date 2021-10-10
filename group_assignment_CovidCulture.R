@@ -1,7 +1,6 @@
 ####################################################################################
-## Script Name : data_cleaning.R                                                  ##                                         
-## Description : Takes raw data from OWID and Hofstede, cleans and combines them ##
-## Changes :                                                                      ##
+## Script Name : group_assignment_covidCulture.R                                  ##                                         
+## Description : Group 10's take on the ASAP group assignment                     ##                                                                     
 ####################################################################################
 
 # packages
@@ -69,7 +68,6 @@ gov_eu = gov %>%
 # sanity check
 check_eu = function(df, df_col, eu_lst) {
   if (length(eu_lst) != n_distinct(df[df_col])) {
-    print(head(df[df_col]))
     cat("Error: nr. of eu countries (",length(eu_lst), ") does not equal nr. of countries found in owid df (", n_distinct(df[df_col]), ").")
     cat("Missing value(s):", eu_lst[which(!eu_lst %in% df[df_col])])
   } else {
@@ -80,12 +78,10 @@ check_eu(owid_eu, 'iso_code', eu_iso)
 check_eu(hof_eu, 'country', eu_countries)
 check_eu(gov_eu, 'CountryCode', eu_iso)
 
-
 # subset and keep only variables of interest
 vars = c('iso_code','date','positive_rate', 'hosp_patients_per_million', 'people_vaccinated_per_hundred')
 owid_eu = owid_eu[vars]
 
-colnames(gov_eu)
 gov_vars = c('CountryCode', 'Date', 'C1_School.closing', 'C2_Workplace.closing', 'C3_Cancel.public.events', 
              'C4_Restrictions.on.gatherings', 'C6_Stay.at.home.requirements')
 gov_eu = gov_eu[gov_vars]
@@ -116,7 +112,6 @@ for (i in 1:nrow(hof_eu)) {
   hof_eu$ctr[hof_eu$country == country] <- iso
 }
 hof_eu = subset(hof_eu, select = -country)
-
 
 # calculate aggregations
 start_date = "2021-02-01"
