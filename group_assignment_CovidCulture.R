@@ -64,12 +64,13 @@ hof_eu = hof %>%
   filter(country %in% eu_countries)
 gov_eu = gov %>%
   filter(CountryCode %in% eu_iso)
+freedom = freedom %>%
+  filter(iso3c %in% eu_iso)
 
 # sanity check
 check_eu = function(df, df_col, eu_lst) {
   if (length(eu_lst) != n_distinct(df[df_col])) {
-    cat("Error: nr. of eu countries (",length(eu_lst), ") does not equal nr. of countries found in owid df (", n_distinct(df[df_col]), ").")
-    cat("Missing value(s):", eu_lst[which(!eu_lst %in% df[df_col])])
+    cat("Error: nr. of eu countries (",length(eu_lst), ") does not equal nr. of countries found in df (", n_distinct(df[df_col]), ").")
   } else {
     print("All EU countries are included!")
   }
@@ -77,6 +78,7 @@ check_eu = function(df, df_col, eu_lst) {
 check_eu(owid_eu, 'iso_code', eu_iso)
 check_eu(hof_eu, 'country', eu_countries)
 check_eu(gov_eu, 'CountryCode', eu_iso)
+check_eu(freedom, 'iso3c', eu_iso) # missing CZE
 
 # subset and keep only variables of interest
 vars = c('iso_code','date','positive_rate', 'hosp_patients_per_million', 'people_vaccinated_per_hundred')
@@ -121,8 +123,8 @@ df = owid_eu %>%
   filter(date >= start_date & date <= end_date) %>%
   inner_join(pop_dens, by= c('iso_code' = 'iso3c')) %>%
   inner_join(hof_eu, by = c('iso_code' = 'ctr')) %>%
-  left_join(ob[c('iso3c', 'obesity_rate_2019')], by = c('iso_code' = 'iso3c'))# %>%
-  #inner_join(freedom[c('iso3c', 'dFreedom_status', 'cFreedom_score')], by = c('iso_code' = 'iso3c'))
+  left_join(ob[c('iso3c', 'obesity_rate_2019')], by = c('iso_code' = 'iso3c')) %>%
+  left_join(freedom[c('iso3c', 'dFreedom_status', 'cFreedom_score')], by = c('iso_code' = 'iso3c'))
 
 # sanity check for having all EU countries
 check_eu(df, 'iso_code', eu_iso)
@@ -216,6 +218,7 @@ df.avg =
         avg.uai = mean(uai, na.rm=TRUE),
         avg.ltowvs = mean(ltowvs, na.rm=TRUE),
         avg.ivr = mean(ivr, na.rm=TRUE),
+        avg.cFreedom_score = mean(cFreedom_score, na.rm=TRUE),
         numValid = length(iso_code)
   )
 
@@ -265,7 +268,6 @@ ggsave(paste0(dirRes, "/PD_hospPatients.png"),  width=8, height=4)
 ggplot(df.avg, aes(x=avg.idv,y=avg.hosp_patients_per_million)) +
   geom_point(aes(fill=iso_code), colour="black", pch=21, size=5, show.legend = F, alpha=0.65, se=F) +
   geom_text(aes(label=iso_code),hjust=-0.27, vjust=0.6) +
-  geom_smooth(color='black', se=F) + 
   labs(title="Relationship between Individualism and Hospitalized patients",
        x="Individualism",
        y="Avg. Hospitalized patients per million") +
@@ -290,8 +292,8 @@ ggsave(paste0(dirRes, "/indulgence_hospPatients.png"),  width=8, height=4)
 # formulate the model
 # =====================================================================
 
-mdlA = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred + I(people_vaccinated_per_hundred^2) + lagged_vaccination +
-                        I(lagged_vaccination^2) + school_closing + workplace_closing +
+mdlA = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred + I(people_vaccinated_per_hundred^2) + 
+                        school_closing + workplace_closing +
                         cancel_public_events + restrictions_on_gatherings + stay_at_home +
                         population_density + obesity_rate_2019 +
                         pdi + idv + ivr
@@ -313,22 +315,29 @@ phtest(rsltFE.Country, rsltRE.Country)
 # Hausman-Taylor estimator --> an instrumental variable
 # estimator without external instruments; it considers
 # time-variant variables as instruments for time invariant variables
-#mdlB = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred + school_closing + workplace_closing +
-#  cancel_public_events + restrictions_on_gatherings + stay_at_home +
-#  population_density + obesity_rate_2019 +
-#  pdi + idv + ivr | positive_rate + people_vaccinated_per_hundred +
-#  school_closing + workplace_closing + cancel_public_events + restrictions_on_gatherings + stay_at_home | population_density
+mdlB = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred + 
+  I(people_vaccinated_per_hundred^2) + school_closing + workplace_closing +
+  cancel_public_events + restrictions_on_gatherings + stay_at_home +
+  population_density + obesity_rate_2019 +
+  pdi + idv + ivr | positive_rate + lagged_vaccination + 
+  I(lagged_vaccination^2) + school_closing + workplace_closing +
+  cancel_public_events + restrictions_on_gatherings + stay_at_home |
+  population_density + obesity_rate_2019 +
+  pdi + idv + ivr + cFreedom_score
   
   
-#rsltREHT.Country = plm(mdlB, data=df.final,
-#            index=c("iso_code","date"), model="random", random.method = "ht", inst.method = "am")
+rsltREHT.Country = plm(mdlB, data=df.final,
+            index=c("iso_code","date"), model="random", random.method = "ht", inst.method = "baltagi")
 
 # Hausman test
-#phtest(rsltFE.Country, rsltREHT.Country)
+phtest(rsltFE.Country, rsltREHT.Country) # HT model is inconsistent
 
-#stargazer(rsltREHT.Country, type='text')
+stargazer(rsltRE.Country, rsltREHT.Country, type='text')
 
-# heteroskedasticity
+# check multicollinearity with VIF
+vif(rsltRE.Country) # only multicollinear variables are the vaccination terms with quadratics which is fine
+
+# heteroskedasticity for simple RE model
 lmtest::bptest(rsltRE.Country)
 
 # robust se
