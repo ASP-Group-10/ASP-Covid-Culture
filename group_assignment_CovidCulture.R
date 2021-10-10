@@ -19,6 +19,7 @@ library(zoo)
 # set directories
 dir = dirname(rstudioapi::getActiveDocumentContext()$path)
 dirData = paste0(dir,'/data')
+dirRes = paste0(dir,'/figures')
 
 # =====================================================================
 # Acquire data from different sources
@@ -183,12 +184,12 @@ for (ctr in unique(df.sub$iso_code)) {
   df.final = rbind(df.final, df_ctr)
 }
 
-# Summary table
+# Summary table (INCLUDE THIS IN OUR PAPER)
 df.final = as.data.frame(df.final)
 stargazer(df.final, type='text')
 
 # remove not needed objects
-rm(list=setdiff(ls(), c("df", "df.sub", "df.final", "dir", 'dirData')))
+rm(list=setdiff(ls(), c("df", "df.sub", "df.final", "dir", 'dirData', 'dirRes')))
 
 # write final df
 write.csv(df.final, paste0(dirData, '/final_df.csv'))
@@ -212,7 +213,6 @@ df.avg =
         avg.hosp_patients_per_million = mean(hosp_patients_per_million, na.rm=TRUE),
         avg.people_vaccinated_per_hundred = mean(people_vaccinated_per_hundred, na.rm=TRUE),
         avg.lagged_vaccination = mean(lagged_vaccination, na.rm=TRUE),
-        avg.stay_at_home = mean(stay_at_home, na.rm=TRUE),
         avg.population_density = mean(population_density, na.rm=TRUE),
         avg.obesity_rate_2019 = mean(obesity_rate_2019, na.rm=TRUE),
         avg.pdi = mean(pdi, na.rm=TRUE),
@@ -240,7 +240,8 @@ df.avg = df.avg[df.avg$numValid == max_valid,]
 shapiro.test(df.final$hosp_patients_per_million) # not normal
 ggplot(df.final, aes(hosp_patients_per_million)) + geom_histogram(binwidth = 100)
 
-# scatter plot of vaccination and hospitalized patients
+# scatter plot of vaccination and hospitalized patients (INCLUDE THIS IN OUR PAPER)
+# because of the non-linear nature of vaccination, use quadratic term
 ggplot(df.final, aes(x=people_vaccinated_per_hundred,y=hosp_patients_per_million)) +
   geom_smooth(aes(color=iso_code),show.legend = T, alpha=0.65, se=F) + 
   labs(title="Relationship between Vaccination and Hospitalized patients",
@@ -250,7 +251,9 @@ ggplot(df.final, aes(x=people_vaccinated_per_hundred,y=hosp_patients_per_million
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
   theme_minimal()
+ggsave(paste0(dirRes, "/Vacc_hospPatients.png"),  width=8, height=4)
 
+# relationship between Power Distance and hospitalized patients (INCLUDE THIS IN OUR PAPER)
 ggplot(df.avg, aes(x=avg.pdi,y=avg.hosp_patients_per_million)) +
   geom_point(aes(fill=iso_code), colour="black", pch=21, size=5, show.legend = F, alpha=0.65, se=F) + 
   geom_text(aes(label=iso_code),hjust=-0.27, vjust=0.6) +
@@ -260,7 +263,10 @@ ggplot(df.avg, aes(x=avg.pdi,y=avg.hosp_patients_per_million)) +
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
   theme_minimal()
+ggsave(paste0(dirRes, "/PD_hospPatients.png"),  width=8, height=4)
 
+
+# relationship between Individualism and hospitalized patients (INCLUDE THIS IN OUR PAPER)
 ggplot(df.avg, aes(x=avg.idv,y=avg.hosp_patients_per_million)) +
   geom_point(aes(fill=iso_code), colour="black", pch=21, size=5, show.legend = F, alpha=0.65, se=F) +
   geom_text(aes(label=iso_code),hjust=-0.27, vjust=0.6) +
@@ -271,7 +277,9 @@ ggplot(df.avg, aes(x=avg.idv,y=avg.hosp_patients_per_million)) +
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
   theme_minimal()
+ggsave(paste0(dirRes, "/Indiv_hospPatients.png"),  width=8, height=4)
 
+# relationship between Indulgence and hospitalized patients (INCLUDE THIS IN OUR PAPER)
 ggplot(df.avg, aes(x=avg.ivr,y=avg.hosp_patients_per_million)) +
   geom_point(aes(fill=iso_code), colour="black", pch=21, size=5, show.legend = F, alpha=0.65, se=F) + 
   geom_text(aes(label=iso_code),hjust=-0.25, vjust=0.5) +
@@ -281,6 +289,7 @@ ggplot(df.avg, aes(x=avg.ivr,y=avg.hosp_patients_per_million)) +
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
   theme_minimal()
+ggsave(paste0(dirRes, "/indulgence_hospPatients.png"),  width=8, height=4)
 
 # =====================================================================
 # formulate the model
@@ -292,7 +301,7 @@ mdlA = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred
                         population_density + obesity_rate_2019 +
                         pdi + idv + ivr
 
-# estimate pooled model
+# estimate models
 rslt.Pooling = plm(mdlA, data=df.final, model="pooling")
 rsltFE.Country = plm(mdlA, data=df.final,
                      index=c("iso_code","date"), model="within")
@@ -330,4 +339,4 @@ lmtest::bptest(rsltRE.Country)
 # robust se
 seBasic = sqrt( diag ( vcov (rsltRE.Country)))
 seWhite = sqrt( diag ( vcovHC (rsltRE.Country, type="HC0")))
-stargazer(rsltRE.Country, rsltRE.Country, se=list(seBasic, seWhite), type="text")
+stargazer(rsltRE.Country, se=list(seWhite), type="text") # ADD THIS TABLE TO FINAL REPORT
