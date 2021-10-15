@@ -114,6 +114,7 @@ for (i in 1:nrow(hof_eu)) {
   hof_eu$ctr[hof_eu$country == country] <- iso
 }
 hof_eu = subset(hof_eu, select = -country)
+hof_eu = hof_eu[c('ctr','pdi','idv','ivr')]
 
 # calculate aggregations
 start_date = "2021-02-01"
@@ -130,8 +131,7 @@ df = owid_eu %>%
 check_eu(df, 'iso_code', eu_iso)
 
 # typecast
-numcols = c('obesity_rate_2019','pdi','idv','mas',
-            'uai','ltowvs','ivr')
+numcols = c('obesity_rate_2019','pdi','idv','ivr')
 
 for (col in numcols) {
   print(paste('Typecasting column:', col))
@@ -152,9 +152,6 @@ df.sub = arrange(df.sub, iso_code, date)
 # change outlier numbers to 0-100 scale 
 # following https://geerthofstede.com/research-and-vsm/dimension-data-matrix/
 df.sub$pdi[df.sub$iso_code == 'SVK'] = 100
-df.sub$mas[df.sub$iso_code == 'SVK'] = 100
-df.sub$uai[df.sub$iso_code == 'GRE'] = 100
-df.sub$uai[df.sub$iso_code == 'PRT'] = 99
 
 # =====================================================================
 # Handle missing vaccination data + add lagged effect for vaccination
@@ -176,14 +173,13 @@ df.final = data.frame()
 for (ctr in unique(df.sub$iso_code)) {
   df_ctr = df.sub %>%
     filter(iso_code == ctr) %>%
-    mutate(people_vaccinated_per_hundred = round(na.approx(people_vaccinated_per_hundred, na.rm=FALSE),2),
-           lagged_vaccination = lagpad(people_vaccinated_per_hundred, 14))
+    mutate(people_vaccinated_per_hundred = round(na.approx(people_vaccinated_per_hundred, na.rm=FALSE),2))
   df.final = rbind(df.final, df_ctr)
 }
 
 # Summary table (INCLUDE THIS IN OUR PAPER)
 df.final = as.data.frame(df.final)
-stargazer(df.final, type='text')
+stargazer(df.final)
 
 # remove not needed objects
 rm(list=setdiff(ls(), c("df", "df.sub", "df.final", "dir", 'dirData', 'dirRes')))
@@ -195,13 +191,6 @@ write.csv(df.final, paste0(dirData, '/final_df.csv'))
 # Factorize restrictions, calculate averages and balance the dataset
 # =====================================================================
 
-# factorize governmental restrictions
-df.final$school_closing = factor(df.final$school_closing, ordered=T, levels=c(0,1,2,3))
-df.final$workplace_closing = factor(df.final$workplace_closing, ordered=T, levels=c(0,1,2,3))
-df.final$cancel_public_events = factor(df.final$cancel_public_events, ordered=T, levels=c(1,2))
-df.final$restrictions_on_gatherings = factor(df.final$restrictions_on_gatherings, ordered=T, levels=c(2,3,4))
-df.final$stay_at_home = factor(df.final$stay_at_home, ordered=T, levels=c(0,1,2))
-
 # calculate averages
 library(plyr)
 df.avg = 
@@ -209,14 +198,10 @@ df.avg =
         avg.positive_rate = mean(positive_rate, na.rm=TRUE),
         avg.hosp_patients_per_million = mean(hosp_patients_per_million, na.rm=TRUE),
         avg.people_vaccinated_per_hundred = mean(people_vaccinated_per_hundred, na.rm=TRUE),
-        avg.lagged_vaccination = mean(lagged_vaccination, na.rm=TRUE),
         avg.population_density = mean(population_density, na.rm=TRUE),
         avg.obesity_rate_2019 = mean(obesity_rate_2019, na.rm=TRUE),
         avg.pdi = mean(pdi, na.rm=TRUE),
         avg.idv = mean(idv, na.rm=TRUE),
-        avg.mas = mean(mas, na.rm=TRUE),
-        avg.uai = mean(uai, na.rm=TRUE),
-        avg.ltowvs = mean(ltowvs, na.rm=TRUE),
         avg.ivr = mean(ivr, na.rm=TRUE),
         avg.cFreedom_score = mean(cFreedom_score, na.rm=TRUE),
         numValid = length(iso_code)
@@ -234,58 +219,68 @@ df.avg = df.avg[df.avg$numValid == max_valid,]
 # Check regression assumptions + create plots
 # =====================================================================
 
-# Normality tests
-shapiro.test(df.final$hosp_patients_per_million) # not normal
-ggplot(df.final, aes(hosp_patients_per_million)) + geom_histogram(binwidth = 100)
-
 # scatter plot of vaccination and hospitalized patients (INCLUDE THIS IN OUR PAPER)
 # because of the non-linear nature of vaccination, use quadratic term
 ggplot(df.final, aes(x=people_vaccinated_per_hundred,y=hosp_patients_per_million)) +
   geom_smooth(aes(color=iso_code),show.legend = T, alpha=0.65, se=F) + 
-  labs(title="Relationship between Vaccination and Hospitalized patients",
+  labs(title="Relationship between VAC and HOSPI",
        subtitle="Using a scatter plot",
-       x="Vaccination rate",
-       y="Hospitalized patients per million") +
+       x="VAC",
+       y="HOSPI") +
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
-  theme_minimal()
+  theme_minimal() +
+  theme(axis.title = element_text(size = rel(1.2)),
+      axis.text = element_text(size = rel(1.2))) 
 ggsave(paste0(dirRes, "/Vacc_hospPatients.png"),  width=8, height=4)
 
 # relationship between Power Distance and hospitalized patients (INCLUDE THIS IN OUR PAPER)
 ggplot(df.avg, aes(x=avg.pdi,y=avg.hosp_patients_per_million)) +
-  geom_point(aes(fill=iso_code), colour="black", pch=21, size=5, show.legend = F, alpha=0.65, se=F) + 
-  geom_text(aes(label=iso_code),hjust=-0.27, vjust=0.6) +
-  labs(title="Relationship between Power Distance and Hospitalized patients",
+  geom_point(aes(fill=iso_code), colour="black", pch=21, size=9, show.legend = F, alpha=0.65) + 
+  geom_smooth(method='lm', se=T, colour='black', alpha=0.2) +
+  geom_text(aes(label=iso_code),hjust=-0.45, vjust=0.8) +
+  labs(title="Relationship between PDI and HOSPI",
        x="Power Distance",
        y="Avg. Hospitalized patients per million") +
+  xlim(10,103) +
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
-  theme_minimal()
+  theme_minimal() +
+  theme(axis.title = element_text(size = rel(1.2)),
+        axis.text = element_text(size = rel(1.2))) 
 ggsave(paste0(dirRes, "/PD_hospPatients.png"),  width=8, height=4)
 
 
 # relationship between Individualism and hospitalized patients (INCLUDE THIS IN OUR PAPER)
 ggplot(df.avg, aes(x=avg.idv,y=avg.hosp_patients_per_million)) +
-  geom_point(aes(fill=iso_code), colour="black", pch=21, size=5, show.legend = F, alpha=0.65, se=F) +
-  geom_text(aes(label=iso_code),hjust=-0.27, vjust=0.6) +
-  labs(title="Relationship between Individualism and Hospitalized patients",
-       x="Individualism",
-       y="Avg. Hospitalized patients per million") +
+  geom_point(aes(fill=iso_code), colour="black", pch=21, size=9, show.legend = F, alpha=0.65, se=F) +
+  geom_smooth(method='lm', se=T, colour='black', alpha=0.2) +
+  geom_text(aes(label=iso_code),hjust=-0.45, vjust=0.8) +
+  labs(title="Relationship between IND and HOSPI",
+       x="IND",
+       y="Avg. HOSPI") +
+  xlim(27,82) +
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
-  theme_minimal()
+  theme_minimal() +
+  theme(axis.title = element_text(size = rel(1.2)),
+        axis.text = element_text(size = rel(1.2))) 
 ggsave(paste0(dirRes, "/Indiv_hospPatients.png"),  width=8, height=4)
 
 # relationship between Indulgence and hospitalized patients (INCLUDE THIS IN OUR PAPER)
 ggplot(df.avg, aes(x=avg.ivr,y=avg.hosp_patients_per_million)) +
-  geom_point(aes(fill=iso_code), colour="black", pch=21, size=5, show.legend = F, alpha=0.65, se=F) + 
-  geom_text(aes(label=iso_code),hjust=-0.25, vjust=0.5) +
-  labs(title="Relationship between Indulgence and Hospitalized patients",
-       x="Indulgence",
-       y="Avg. Hospitalized patients per million") +
+  geom_point(aes(fill=iso_code), colour="black", pch=21, size=9, show.legend = F, alpha=0.65, se=F) + 
+  geom_smooth(method='lm', se=T, colour='black', alpha=0.2) +
+  geom_text(aes(label=iso_code),hjust=-0.45, vjust=0.8) +
+  labs(title="Relationship between IDR and HOSPI",
+       x="IDR",
+       y="Avg. HOSPI") +
+  xlim(14,82) +
   guides(size = F,
          color = guide_legend(override.aes = list(size=5))) +
-  theme_minimal()
+  theme_minimal() +
+  theme(axis.title = element_text(size = rel(1.2)),
+        axis.text = element_text(size = rel(1.2))) 
 ggsave(paste0(dirRes, "/indulgence_hospPatients.png"),  width=8, height=4)
 
 # =====================================================================
@@ -293,8 +288,8 @@ ggsave(paste0(dirRes, "/indulgence_hospPatients.png"),  width=8, height=4)
 # =====================================================================
 
 mdlA = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred + I(people_vaccinated_per_hundred^2) + 
-                        school_closing + workplace_closing +
-                        cancel_public_events + restrictions_on_gatherings + stay_at_home +
+                        factor(school_closing) + factor(workplace_closing) +
+                        factor(cancel_public_events) + factor(restrictions_on_gatherings) + factor(stay_at_home) +
                         population_density + obesity_rate_2019 +
                         pdi + idv + ivr
 
@@ -315,32 +310,28 @@ phtest(rsltFE.Country, rsltRE.Country)
 # Hausman-Taylor estimator --> an instrumental variable
 # estimator without external instruments; it considers
 # time-variant variables as instruments for time invariant variables
-mdlB = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred + 
-  I(people_vaccinated_per_hundred^2) + school_closing + workplace_closing +
-  cancel_public_events + restrictions_on_gatherings + stay_at_home +
+mdlB = hosp_patients_per_million ~ positive_rate + people_vaccinated_per_hundred + I(people_vaccinated_per_hundred^2) + 
+  factor(school_closing) + factor(workplace_closing) +
+  factor(cancel_public_events) + factor(restrictions_on_gatherings) + factor(stay_at_home) +
   population_density + obesity_rate_2019 +
-  pdi + idv + ivr | positive_rate + lagged_vaccination + 
-  I(lagged_vaccination^2) + school_closing + workplace_closing +
-  cancel_public_events + restrictions_on_gatherings + stay_at_home |
-  population_density + obesity_rate_2019 +
-  pdi + idv + ivr + cFreedom_score
-  
+  pdi + idv + ivr | positive_rate + people_vaccinated_per_hundred + I(people_vaccinated_per_hundred^2) + 
+  factor(school_closing) + factor(workplace_closing) +
+  factor(cancel_public_events) + factor(restrictions_on_gatherings) + factor(stay_at_home) | 
+  population_density + obesity_rate_2019 + pdi + idv + ivr
   
 rsltREHT.Country = plm(mdlB, data=df.final,
             index=c("iso_code","date"), model="random", random.method = "ht", inst.method = "baltagi")
 
 # Hausman test
-phtest(rsltFE.Country, rsltREHT.Country) # HT model is inconsistent
-
-stargazer(rsltRE.Country, rsltREHT.Country, type='text')
+phtest(rsltFE.Country, rsltREHT.Country) # HT model is consistent
 
 # check multicollinearity with VIF
-vif(rsltRE.Country) # only multicollinear variables are the vaccination terms with quadratics which is fine
+vif(rsltREHT.Country) # only multicollinear variables are the vaccination terms with quadratics which is fine
 
 # heteroskedasticity for simple RE model
-lmtest::bptest(rsltRE.Country)
+lmtest::bptest(rsltREHT.Country)
 
 # robust se
-seBasic = sqrt( diag ( vcov (rsltRE.Country)))
-seWhite = sqrt( diag ( vcovHC (rsltRE.Country, type="HC0")))
-stargazer(rsltRE.Country, se=list(seWhite), type="text") # ADD THIS TABLE TO FINAL REPORT
+seBasic = sqrt( diag ( vcov (rsltREHT.Country)))
+seWhite = sqrt( diag ( vcovHC (rsltREHT.Country, type="HC0"))) # not working
+stargazer(rslt.Pooling, rsltFE.Country, rsltRE.Country, rsltREHT.Country, type='text') # ADD THIS TABLE TO FINAL REPORT
